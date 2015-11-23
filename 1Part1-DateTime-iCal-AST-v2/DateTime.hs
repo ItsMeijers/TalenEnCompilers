@@ -56,6 +56,8 @@ main = interact (printOutput . processCheck . processInput)
         printOutput  = unlines . map show
 
 -- Exercise 1
+-- Parser combinator for DateTime, gets created by combining parseDate, parseTime and parseUtc
+-- Finally DateTime gets contstructed by using the <$> parser combinator
 parseDateTime :: Parser Char DateTime
 parseDateTime = DateTime <$> parseDate <*> parseTime <*> parseUtc
 
@@ -78,7 +80,7 @@ parseDate = Date <$> parseYear <*> parseMonth <*> parseDay
 -- Extracted as seperate function since parsing an individual Time might be usefull
 parseTime :: Parser Char Time
 parseTime = Time
-            <$> (symbol 'T' *> parseHour) -- Symbol T has to be parsed but result can be ignored
+            <$> (symbol 'T' *> parseHour) -- Symbol T has to be parsed but the result can be ignored
             <*> parseMinute
             <*> parseSecond
     where
