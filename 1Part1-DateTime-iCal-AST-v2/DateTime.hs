@@ -57,7 +57,7 @@ main = interact (printOutput . processCheck . processInput)
 
 -- Exercise 1
 -- Parser combinator for DateTime, gets created by combining parseDate, parseTime and parseUtc
--- Finally DateTime gets contstructed by using the <$> parser combinator
+-- Finally DateTime gets contstructed by the parser using the <$> parser combinator
 parseDateTime :: Parser Char DateTime
 parseDateTime = DateTime <$> parseDate <*> parseTime <*> parseUtc
 
