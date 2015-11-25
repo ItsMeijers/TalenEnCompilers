@@ -102,13 +102,12 @@ main = do Just cal <- readCalendar "examples/rooster_infotc.ics"
 
 -- Exercise 1
 parseCalendar :: Parser Char Calendar
-parseCalendar = Calendar <$>
-                parseProdId <*>
-                many parseVEvent
-                --parseBeginVCal *> parseVersion   *>
-                -- parseProdId    <*>
-                -- many parseVEvent <*>
-                -- parseEndVCal
+parseCalendar = Calendar         <$>
+                (parseBeginVCal  *>
+                parseVersion     *>
+                parseProdId)     <*>
+                many parseVEvent <*
+                parseEndVCal
 
 parseVEvent :: Parser Char VEvent
 parseVEvent = undefined
@@ -135,7 +134,7 @@ parseVersion :: Parser Char String
 parseVersion = parseTokenColonIdentifier "VERSION"
 
 parseProdId :: Parser Char String
-parseProdId = parseBeginVCal *> parseVersion *> parseTokenColonIdentifier "PRODID"
+parseProdId = parseTokenColonIdentifier "PRODID"
 
 -- Exercise 2
 readCalendar :: FilePath -> IO (Maybe Calendar)
@@ -159,7 +158,6 @@ readTest fp = do
 printCalendar :: Calendar -> String
 printCalendar = undefined
 
-
 -- Exercise 4
 countEvents :: Calendar -> Int
 countEvents = undefined
@@ -172,8 +170,6 @@ checkOverlapping = undefined
 
 timeSpent :: String -> Calendar -> Int
 timeSpent = undefined
-
-
 
 -- Exercise 5
 ppMonth :: Year -> Month -> Calendar -> Doc
