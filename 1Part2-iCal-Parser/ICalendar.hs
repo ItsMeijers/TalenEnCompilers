@@ -76,7 +76,7 @@ parseTime = Time
        parseSecond = Second <$> parseTwoDigits
 
 -- Helper function for creating a Int parser where 2 digits are present
--- Gets used enought for abstracting as individual function
+-- Gets used enought for extracting this function as a specialization
 parseTwoDigits :: Parser Char Int
 parseTwoDigits = parseDigits 2
 
@@ -109,8 +109,42 @@ parseCalendar = Calendar         <$>
                 many parseVEvent <*
                 parseEndVCal
 
+parseBeginVEvent :: Parser Char String
+parseBeginVEvent = parseTokenColonToken "BEGIN" "VEVENT"
+
+parseEndVEvent :: Parser Char String
+parseEndVEvent = parseTokenColonToken "END" "VEVENT"
+
+parseUID :: Parser Char String
+parseUID = parseTokenColonIdentifier "UID"
+
 parseVEvent :: Parser Char VEvent
-parseVEvent = undefined
+parseVEvent = VEvent             <$>
+              parseDateTimeStamp <*>
+              parseUID           <*>
+              parseDateTimeStart <*>
+              parseDateTimeEnd   <*>
+              parseDescription   <*>
+              parseSummary       <*>
+              parseLocation
+
+parseDateTimeStamp :: Parser Char DateTime
+parseDateTimeStamp = parseTokenColonParser "DTSTAMP" parseDateTime
+
+parseDateTimeStart :: Parser Char DateTime
+parseDateTimeStart = parseTokenColonParser "DTSTART" parseDateTime
+
+parseDateTimeEnd :: Parser Char DateTime
+parseDateTimeEnd = parseTokenColonParser "DTEND" parseDateTime
+
+parseDescription :: Parser Char (Maybe String)
+parseDescription = optional $ parseTokenColonIdentifier "DESCRIPTION"
+
+parseSummary :: Parser Char (Maybe String)
+parseSummary = undefined
+
+parseLocation :: Parser Char (Maybe String)
+parseLocation = undefined
 
 parseBeginVCal :: Parser Char String
 parseBeginVCal = parseTokenColonToken "BEGIN" "VCALENDAR"
@@ -119,16 +153,18 @@ parseEndVCal :: Parser Char String
 parseEndVCal = parseTokenColonToken "END" "VCALENDAR"
 
 parseTokenColonToken :: String -> String -> Parser Char String
-parseTokenColonToken t t' = token t *> pColon *> token t'
+parseTokenColonToken t t' = token t *> parseColon *> token t'
 
-pColon :: Parser Char Char
-pColon = symbol ':'
-
+parseColon :: Parser Char Char
+parseColon = symbol ':'
 
 -- | Creates a parser combinator based on a token followed by a colon followed by an identifier
 -- Both the token and colon can be ignored only the result of identifier matters
 parseTokenColonIdentifier :: String -> Parser Char String
-parseTokenColonIdentifier t = token t *> pColon *> many anySymbol
+parseTokenColonIdentifier t = parseTokenColonParser t $ many anySymbol
+
+parseTokenColonParser :: String -> Parser Char a -> Parser Char a
+parseTokenColonParser t = (token t *> parseColon *>)
 
 parseVersion :: Parser Char String
 parseVersion = parseTokenColonIdentifier "VERSION"
