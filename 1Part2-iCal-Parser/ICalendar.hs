@@ -259,12 +259,8 @@ readTest fp = do
               content <- hGetContents handle
               return $ scanner content
 
-data Token = Identifier | StringToken String | DateTimeToken DateTime -- Convert Parser Type to Token ish
+data Token = StringToken String | DateTimeToken DateTime
   deriving Show
-
-instance Eq Token where
-  (StringToken _) == Identifier = True
-  (DateTimeToken _) == Identifier = True
 
 scanner :: String -> [Token]
 scanner = map makeToken . splitOneOf ":\n\r"
@@ -283,9 +279,12 @@ parseResult xs
   | otherwise = fst (head xs)
 
 parseDateTime' :: Parser Token DateTime
-parseDateTime' = symbol DateTimeToken
+parseDateTime' = parseDateTime''
   where parseDateTime'' (DateTimeToken x : xs) = [(x, xs)]
         parseDateTime'' _                      = []
+
+func :: ([Token] -> [(DateTime, [Token])]) -> Parser Token DateTime
+func f = succeed >>= f
 
 -- Exercise 3
 -- DO NOT use a derived Show instance. Your printing style needs to be nicer than that :)
