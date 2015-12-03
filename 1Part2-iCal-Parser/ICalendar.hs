@@ -7,6 +7,7 @@ import Data.Maybe
 import Text.PrettyPrint
 import Data.Char
 import System.IO
+import Data.List(delete)
 
 data DateTime = DateTime { date :: Date
                          , time :: Time
@@ -35,9 +36,6 @@ newtype Second = Second { unSecond :: Int } deriving (Eq, Ord)
 data Calendar = Calendar { prodId :: String
                          , events :: [VEvent] }
     deriving Eq
-
-instance Show Calendar where
-  show = printCalendar
 
 data VEvent = VEvent { dtStamp     :: DateTime
                      , uid         :: String
@@ -255,7 +253,7 @@ printVEvent VEvent {..} = "BEGIN:VEVENT"         ++ rn          ++
 printMaybe :: String -> Maybe String -> String
 printMaybe xs = maybe "" (\s -> xs ++ s ++ rn)
 
--- | Small specialization to not have to type \r\n all the time, lazy programming with lazy evaluation ;)
+-- | Small specialization to not having to type \r\n all the time, lazy programming with lazy evaluation ;)
 rn :: String
 rn = "\r\n"
 
@@ -277,17 +275,36 @@ printDateTime DateTime {..} = printDate date ++ "T" ++ printTime time ++ ['Z' | 
              where length' = length xs
 
 -- Exercise 4
+-- | Counts the amount (Int) of events of certain Calendar
 countEvents :: Calendar -> Int
-countEvents Calendar{events}= length events
+countEvents Calendar {events} = length events
 
+-- | Finds events that happen during a certain Date and Time
+-- When the DateTime is not before the start time and not after the end time its during the DateTime
 findEvents :: DateTime -> Calendar -> [VEvent]
-findEvents = undefined
+findEvents dt Calendar {events} = eventsMatchesDateTime dt events
+
+eventsMatchesDateTime :: DateTime -> [VEvent] -> [VEvent]
+eventsMatchesDateTime dt = filter matchesDateTime
+    where matchesDateTime VEvent {dtStart, dtEnd} = not (dt < dtStart) && not (dt > dtEnd)
 
 checkOverlapping :: Calendar -> Bool
-checkOverlapping = undefined
+checkOverlapping Calendar {events} = any overlaps events
+  where overlaps (e@VEvent {dtStart, dtEnd}) = matches dtStart e || matches dtEnd e
+        matches dt e' = not (null (eventsMatchesDateTime dt events'))
+          where events' = delete e' events
 
 timeSpent :: String -> Calendar -> Int
-timeSpent = undefined
+timeSpent s Calendar {events} = sum $ map getTime events
+  where getTime VEvent {summary, dtStart, dtEnd} = maybe 0 (countTime dtStart dtEnd s) summary
+
+countTime :: DateTime -> DateTime -> String -> String -> Int
+countTime start end s summ
+  | s /= summ = 0
+  | otherwise = getTime end - getTime start
+    where getTime DateTime {time} = getMinutes time
+          getMinutes Time {..}    = (unHour hour) * 60 - (unMinute minute)
+
 
 -- Exercise 5
 ppMonth :: Year -> Month -> Calendar -> Doc
