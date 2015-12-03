@@ -7,27 +7,11 @@ import Data.Maybe
 import Text.PrettyPrint
 import Data.Char
 import System.IO
-import Data.List.Extra(permutations)
 
 data DateTime = DateTime { date :: Date
                          , time :: Time
                          , utc :: Bool }
     deriving (Eq, Ord)
-
-instance Show DateTime where
-  show = printDateTime
-    where printDateTime DateTime {..} = printDate date ++ "T" ++ printTime time ++ ['Z' | utc]
-            where printDate Date {..} = show' (unYear year)   4 ++
-                                        show' (unMonth month) 2 ++
-                                        show' (unDay day) 2
-                  printTime Time {..} = show' (unHour hour)     2 ++
-                                        show' (unMinute minute) 2 ++
-                                        show' (unSecond second) 2
-                  show' x             = fixLenght (show x)
-                  fixLenght xs n -- fixes the length of a value to its original form; year 1 gets fixed to 0001
-                    | length' >= n    = xs
-                    | otherwise       = replicate (n - length') '0' ++ xs
-                        where length' = length xs
 
 data Date = Date { year  :: Year
                  , month :: Month
@@ -59,7 +43,7 @@ data VEvent = VEvent { dtStamp     :: DateTime
                      , description :: Maybe String
                      , summary     :: Maybe String
                      , location    :: Maybe String }
-    deriving (Eq, Show)
+    deriving Eq
 
 -- Parser combinator for DateTime, gets created by combining parseDate, parseTime and parseUtc
 -- Finally DateTime gets contstructed by the parser using the <$> parser combinator
@@ -117,13 +101,16 @@ run p s = listToMaybe [p | (p, []) <- parse p s]
 main = do Just cal <- readCalendar "examples/rooster_infotc.ics"
           putStrLn $ show $ ppMonth (Year 2012) (Month 11) $ cal
 
+recognizeCalendar :: [Char] -> Maybe Calendar
+recognizeCalendar s = run parseCalendar s
 
 -- Exercise 1
+-- |
 parseCalendar :: Parser Char Calendar
 parseCalendar = Calendar         <$>
                 (parseBeginVCal  *> -- Begin and Version can be ignored for constructing Calendar
-                parseVersion     *>
-                parseProdId)     <*>
+                parseProdId     <*
+                parseVersion)     <*>
                 many parseVEvent <* -- parses many events where the parser is specified for a single event
                 parseEndVCal        -- EndVCal can ignored for constructing Calendar
       where
@@ -132,189 +119,115 @@ parseCalendar = Calendar         <$>
         parseProdId    = parseTokenColonIdentifier "PRODID"       <* parseNewLine
         parseEndVCal   = parseTokenColonToken "END" "VCALENDAR"   <* parseNewLine
 
+-- |
 parseVEvent :: Parser Char VEvent
-parseVEvent = VEvent             <$>
-              (parseBeginVEvent *>
-              parseDateTimeStamp) <*>
-              parseUID           <*>
-              parseDateTimeStart <*>
-              parseDateTimeEnd   <*>
-              parseDescription   <*>
-              parseSummary       <*>
-              (parseLocation <* parseEndVEvent)
--- TESTING
+parseVEvent =  toEvent <$> (parseBeginVEvent   *>
+                            parseVEventResults <*
+                            parseEndVEvent)
+    where
+      parseBeginVEvent = parseTokenColonToken "BEGIN" "VEVENT" <* parseNewLine
+      parseEndVEvent   = parseTokenColonToken "END" "VEVENT" <* parseNewLine
 
-data VEventTest = VEventTest {
-  datStamp :: DateTime,
-  datStart :: DateTime,
-  datEnd :: DateTime,
-  descr :: Maybe String,
-  summ  :: Maybe String,
-  loc   :: Maybe String,
-  ui    :: String} deriving Show
+-- | Creates an "empty" evevent for folding the unordered values into VEvent from a list of maps
+emptyVEvent :: VEvent
+emptyVEvent = VEvent{ description = Nothing
+                    , summary     = Nothing
+                    , location    = Nothing
+                    , dtStamp     = undefined
+                    , uid         = undefined
+                    , dtStart     = undefined
+                    , dtEnd       = undefined }
 
+-- |
+toEvent :: [VEventResult] -> VEvent
+toEvent = foldr f emptyVEvent
+  where f (DT       ("DTSTAMP"    , v))  ve = ve{dtStamp=v}
+        f (DT       ("DTSTART"    , v))  ve = ve{dtStart=v}
+        f (DT       ("DTEND"      , v))  ve = ve{dtEnd=v}
+        f (S        ("UID"        , v))  ve = ve{uid=v}
+        f (MS (Just ("DESCRIPTION", v))) ve = ve{description=Just v}
+        f (MS (Just ("SUMMARY"    , v))) ve = ve{summary=Just v}
+        f (MS (Just ("LOCATION"   , v))) ve = ve{location=Just v}
+        f (MS Nothing)                   ve = ve
+
+-- |
 data VEventResult = DT (String, DateTime)
                   | MS (Maybe (String, String))
-                  | S  (String, String) deriving Show
+                  | S  (String, String)
 
-parseDateStamp :: Parser Char VEventResult
-parseDateStamp = DT <$> parseTokenColonParserT "DTSTAMP" parseDateTime <* parseNewLine
-
-parseDateStart :: Parser Char VEventResult
-parseDateStart = DT <$> parseTokenColonParserT "DTSTART" parseDateTime <* parseNewLine
-
-parseDateEnd :: Parser Char VEventResult
-parseDateEnd = DT <$> parseTokenColonParserT "DTEND" parseDateTime <* parseNewLine
-
-parseDesc :: Parser Char VEventResult
-parseDesc = optionalVEvent "DESCRIPTION"
-
-parseSumm :: Parser Char VEventResult
-parseSumm = optionalVEvent "SUMMARY"
-
-parseLoc :: Parser Char VEventResult
-parseLoc = optionalVEvent "LOCATION"
-
-optionalVEvent :: String -> Parser Char VEventResult
-optionalVEvent xs = MS <$> optional (tokenColonTuple <* parseNewLine)
-  where tokenColonTuple = combineParser parseIdentifier parseSymbols
-        parseIdentifier = token xs <* parseColon
-        parseSymbols    = many (satisfy (/= '\n'))
-
-
-
-parseUID' :: Parser Char VEventResult
-parseUID' = S <$> parseTokenColonParserT "UID" (many anySymbol) <* parseNewLine
-
--- combiners
 parseVEventResults :: Parser Char [VEventResult]
-parseVEventResults = unordered [ parseDateStamp
-                               , parseDateStart
-                               , parseDateEnd
-                               , parseDesc
-                               , parseLoc
-                               , parseSumm
-                               , parseUID' ]
+parseVEventResults = unordered [ parseDateTimeStamp
+                               , parseDateTimeStart
+                               , parseDateTimeEnd
+                               , parseDescription
+                               , parseLocation
+                               , parseSummary
+                               , parseUID ]
+    where
+      parseDateTimeStamp = DT <$> parseTokenColonParserT "DTSTAMP" parseDateTime <* parseNewLine
+      parseDateTimeStart = DT <$> parseTokenColonParserT "DTSTART" parseDateTime <* parseNewLine
+      parseDateTimeEnd   = DT <$> parseTokenColonParserT "DTEND"   parseDateTime <* parseNewLine
+      parseUID           = S  <$> parseTokenColonParserT "UID"     parseSymbols  <* parseNewLine
+      parseDescription   = optionalVEvent "DESCRIPTION"
+      parseSummary       = optionalVEvent "SUMMARY"
+      parseLocation      = optionalVEvent "LOCATION"
 
-parseDates :: Parser Char [VEventResult]
-parseDates = unordered [parseDateStamp, parseDateStart, parseDateEnd]
---
-parseMaybeStrings :: Parser Char [Maybe String]
-parseMaybeStrings = parseOptionalStrings ["LOCATION", "SUMMARY"]
+-- |
+optionalVEvent :: String -> Parser Char VEventResult
+optionalVEvent xs = MS <$> optional (parseTokenColonParserT xs parseSymbols <* parseNewLine)
 
-parseOptionalStrings :: [String] -> Parser Char [Maybe String]
-parseOptionalStrings xs = unordered $ map optionalParse xs
-  where optionalParse s = optional $ token s *> parseColon *> many (satisfy (isLetter)) <* parseNewLine
+parseSymbols :: Parser Char [Char]
+parseSymbols = greedy (satisfy (/= '\r'))
 
+{- Functions defined below are abstractions for creating or modifying parser
+   combinators see individual comments for explanation of each function     -}
 
--- abstractions
+-- |
 parseTokenColonParserT :: String -> Parser Char a -> Parser Char (String, a)
 parseTokenColonParserT xs = combineParser (token xs <* parseColon)
 
+-- | Combines two parser where the result of both parsers are represented in a Tuple
 combineParser :: Parser Char a -> Parser Char b -> Parser Char (a, b)
 combineParser p = ((,) <$> p <*>)
 
-toEvent :: [VEventResult] -> VEventTest
-toEvent = foldr f VEventTest{descr = Nothing, summ = Nothing, loc = Nothing}
-  where f (MS (Just ("DESCRIPTION", v))) ve = ve{descr=Just v}
-        f (MS (Just ("SUMMARY", v)))     ve = ve{summ=Just v}
-        f (MS (Just ("LOCATION", v)))    ve = ve{loc=Just v}
-        f (MS Nothing) ve = ve
-        f (DT ("DTSTAMP", v))            ve = ve{datStamp=v}
-        f (DT ("DTSTART", v))            ve = ve{datStart=v}
-        f (DT ("DTEND", v))              ve = ve{datEnd=v}
-        f (S ("UID", v))                 ve = ve{ui=v}
-
-parseVEventTest :: Parser Char VEventTest
-parseVEventTest = toEvent <$> parseVEventResults
-
-readTestVEvent :: FilePath -> IO (Maybe VEventTest)
-readTestVEvent fp = do
-                handle <- openFile fp ReadMode
-                _ <- hSetNewlineMode handle universalNewlineMode
-                content <- hGetContents handle
-                return $ run parseVEventTest content
-
--- TESTING
-
-
-vEventTest :: FilePath -> IO (Maybe VEvent)
-vEventTest fp = do
-                handle <- openFile fp ReadMode
-                _ <- hSetNewlineMode handle universalNewlineMode
-                content <- hGetContents handle
-                return $ run parseVEvent content
-
-parseBeginVEvent :: Parser Char String
-parseBeginVEvent = parseTokenColonToken "BEGIN" "VEVENT" <* parseNewLine
-
-parseUID :: Parser Char String
-parseUID = parseTokenColonIdentifier "UID" <* parseNewLine
-
-parseDateTimeStamp :: Parser Char DateTime
-parseDateTimeStamp = parseTokenColonParser "DTSTAMP" parseDateTime <* parseNewLine
-
-parseDateTimeStart :: Parser Char DateTime
-parseDateTimeStart = parseTokenColonParser "DTSTART" parseDateTime <* parseNewLine
-
-parseDateTimeEnd :: Parser Char DateTime
-parseDateTimeEnd = parseTokenColonParser "DTEND" parseDateTime <* parseNewLine
-
-parseDescription :: Parser Char (Maybe String)
-parseDescription = optional $ parseTokenColonIdentifier "DESCRIPTION" <* parseNewLine
-
-parseSummary :: Parser Char (Maybe String)
-parseSummary = optional $ parseTokenColonIdentifier "SUMMARY" <* parseNewLine
-
-parseLocation :: Parser Char (Maybe String)
-parseLocation = optional $ parseTokenColonIdentifier "LOCATION" <* parseNewLine
-
-parseEndVEvent :: Parser Char String
-parseEndVEvent = parseTokenColonToken "END" "VEVENT" <* parseNewLine
-
-optionalStringParsers :: Parser Char (Maybe String)
-optionalStringParsers = parseDescription <|> parseSummary <|> parseLocation
-
-dateTimeParsers :: Parser Char DateTime
-dateTimeParsers = parseDateTimeStamp <|> parseDateTimeStart <|> parseDateTimeEnd
-
+-- |
 unordered :: [Parser s a] -> Parser s [a]
 unordered = choice . map ParseLib.Abstract.sequence . permutations
 
--- Parser combinator abstractions :
+permutations :: [a] -> [[a]]
+permutations [] = [[]]
+permutations (x:xs) = concatMap (between x) (permutations xs)
+  where between e []     = [[e]]
+        between e (y:ys) = (e:y:ys) : map (y:) (between e ys)
 
+-- |
 parseTokenColonToken :: String -> String -> Parser Char String
 parseTokenColonToken t t' = token t *> parseColon *> token t'
 
+-- |
 parseColon :: Parser Char Char
 parseColon = symbol ':'
 
 -- | Creates a parser combinator based on a token followed by a colon followed by an identifier
 -- Both the token and colon can be ignored only the result of identifier matters
 parseTokenColonIdentifier :: String -> Parser Char String
-parseTokenColonIdentifier t = parseTokenColonParser t $ many anySymbol
+parseTokenColonIdentifier t = parseTokenColonParser t $ many (satisfy (/='\n'))
 
+-- |
 parseTokenColonParser :: String -> Parser Char a -> Parser Char a
 parseTokenColonParser t = (token t *> parseColon *>)
 
-parseNewLine :: Parser Char Char
-parseNewLine = symbol '\n'
+-- |
+parseNewLine :: Parser Char String
+parseNewLine = token "\r\n"
 
 -- Exercise 2
+-- |
 readCalendar :: FilePath -> IO (Maybe Calendar)
 readCalendar fp = do
                   handle  <- openFile fp ReadMode
-                  _       <- hSetNewlineMode handle universalNewlineMode
                   content <- hGetContents handle
                   return $ run parseCalendar content
-
-type Token = String -- Convert Parser Type to Token ish
-
-readTest :: FilePath -> IO String
-readTest fp = do
-              handle  <- openFile fp ReadMode
-              _       <- hSetNewlineMode handle universalNewlineMode
-              hGetContents handle
 
 -- Exercise 3
 -- DO NOT use a derived Show instance. Your printing style needs to be nicer than that :)
@@ -323,7 +236,7 @@ printCalendar = undefined
 
 -- Exercise 4
 countEvents :: Calendar -> Int
-countEvents = undefined
+countEvents Calendar{events}= length events
 
 findEvents :: DateTime -> Calendar -> [VEvent]
 findEvents = undefined
