@@ -36,6 +36,9 @@ data Calendar = Calendar { prodId :: String
                          , events :: [VEvent] }
     deriving Eq
 
+instance Show Calendar where
+  show = printCalendar
+
 data VEvent = VEvent { dtStamp     :: DateTime
                      , uid         :: String
                      , dtStart     :: DateTime
@@ -109,8 +112,8 @@ recognizeCalendar s = run parseCalendar s
 parseCalendar :: Parser Char Calendar
 parseCalendar = Calendar         <$>
                 (parseBeginVCal  *> -- Begin and Version can be ignored for constructing Calendar
-                parseProdId     <*
-                parseVersion)     <*>
+                parseProdId      <*
+                parseVersion)    <*>
                 many parseVEvent <* -- parses many events where the parser is specified for a single event
                 parseEndVCal        -- EndVCal can ignored for constructing Calendar
       where
@@ -176,7 +179,7 @@ parseVEventResults = unordered [ parseDateTimeStamp
 optionalVEvent :: String -> Parser Char VEventResult
 optionalVEvent xs = MS <$> optional (parseTokenColonParserT xs parseSymbols <* parseNewLine)
 
-parseSymbols :: Parser Char [Char]
+parseSymbols :: Parser Char String
 parseSymbols = greedy (satisfy (/= '\r'))
 
 {- Functions defined below are abstractions for creating or modifying parser
@@ -232,7 +235,46 @@ readCalendar fp = do
 -- Exercise 3
 -- DO NOT use a derived Show instance. Your printing style needs to be nicer than that :)
 printCalendar :: Calendar -> String
-printCalendar = undefined
+printCalendar Calendar {..} = "BEGIN:VCALENDAR"            ++ rn ++
+                              "PRODID:" ++ prodId          ++ rn ++
+                              "VERSION:2.0"                ++ rn ++
+                              concatMap printVEvent events ++
+                              "END:VCALENDAR"              ++ rn
+
+printVEvent :: VEvent -> String
+printVEvent VEvent {..} = "BEGIN:VEVENT"         ++ rn          ++
+                          printMaybe "SUMMARY:"     summary     ++
+                          printMaybe "DESCRIPTION:" description ++
+                          printMaybe "LOCATION:"    location    ++
+                          "DTSTAMP:" ++ printDateTime dtStamp   ++ rn ++
+                          "DTSTART:" ++ printDateTime dtStart   ++ rn ++
+                          "DTEND:"   ++ printDateTime dtEnd     ++ rn
+
+-- | Helper function to print a maybe value with a preprended string returns
+-- a empty string Maybe is Nothing
+printMaybe :: String -> Maybe String -> String
+printMaybe xs = maybe "" (\s -> xs ++ s ++ rn)
+
+-- | Small specialization to not have to type \r\n all the time, lazy programming with lazy evaluation ;)
+rn :: String
+rn = "\r\n"
+
+-- Prints a DateTime to its original form
+-- First prints the Date then add the Symbol T for the time followed by the acutal Time
+-- A Z symbol gets added wether utc of DateTIme is True using list comprehension
+printDateTime :: DateTime -> String
+printDateTime DateTime {..} = printDate date ++ "T" ++ printTime time ++ ['Z' | utc]
+ where printDate Date {..} = show' (unYear year)   4 ++
+                             show' (unMonth month) 2 ++
+                             show' (unDay day) 2
+       printTime Time {..} = show' (unHour hour)     2 ++
+                             show' (unMinute minute) 2 ++
+                             show' (unSecond second) 2
+       show' x             = fixLenght (show x)
+       fixLenght xs n -- fixes the length of a value to its original form; year 1 gets fixed to 0001
+         | length' >= n    = xs
+         | otherwise       = replicate (n - length') '0' ++ xs
+             where length' = length xs
 
 -- Exercise 4
 countEvents :: Calendar -> Int
