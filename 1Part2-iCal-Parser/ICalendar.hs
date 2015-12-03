@@ -167,13 +167,21 @@ parseDateEnd :: Parser Char VEventResult
 parseDateEnd = DT <$> parseTokenColonParserT "DTEND" parseDateTime <* parseNewLine
 
 parseDesc :: Parser Char VEventResult
-parseDesc = MS <$> optional (parseTokenColonParserT "DESCRIPTION" (many1 anySymbol) <* parseNewLine)
+parseDesc = optionalVEvent "DESCRIPTION"
 
 parseSumm :: Parser Char VEventResult
-parseSumm = MS <$> optional (parseTokenColonParserT "SUMMARY" (many1 anySymbol) <* parseNewLine)
+parseSumm = optionalVEvent "SUMMARY"
 
 parseLoc :: Parser Char VEventResult
-parseLoc = MS <$> optional (parseTokenColonParserT "LOCATION" (many1 anySymbol) <* parseNewLine)
+parseLoc = optionalVEvent "LOCATION"
+
+optionalVEvent :: String -> Parser Char VEventResult
+optionalVEvent xs = MS <$> optional (tokenColonTuple <* parseNewLine)
+  where tokenColonTuple = combineParser parseIdentifier parseSymbols
+        parseIdentifier = token xs <* parseColon
+        parseSymbols    = many (satisfy (/= '\n'))
+
+
 
 parseUID' :: Parser Char VEventResult
 parseUID' = S <$> parseTokenColonParserT "UID" (many anySymbol) <* parseNewLine
@@ -188,11 +196,15 @@ parseVEventResults = unordered [ parseDateStamp
                                , parseSumm
                                , parseUID' ]
 
--- parseDates :: Parser Char [(String, DateTime)]
--- parseDates = unordered [parseDateStamp, parseDateStart, parseDateEnd]
+parseDates :: Parser Char [VEventResult]
+parseDates = unordered [parseDateStamp, parseDateStart, parseDateEnd]
 --
--- parseMaybeStrings :: Parser Char [Maybe (String, String)]
--- parseMaybeStrings = unordered [parseDesc, parseSumm, parseLoc]
+parseMaybeStrings :: Parser Char [Maybe String]
+parseMaybeStrings = parseOptionalStrings ["LOCATION", "SUMMARY"]
+
+parseOptionalStrings :: [String] -> Parser Char [Maybe String]
+parseOptionalStrings xs = unordered $ map optionalParse xs
+  where optionalParse s = optional $ token s *> parseColon *> many (satisfy (isLetter)) <* parseNewLine
 
 
 -- abstractions
@@ -207,7 +219,7 @@ toEvent = foldr f VEventTest{descr = Nothing, summ = Nothing, loc = Nothing}
   where f (MS (Just ("DESCRIPTION", v))) ve = ve{descr=Just v}
         f (MS (Just ("SUMMARY", v)))     ve = ve{summ=Just v}
         f (MS (Just ("LOCATION", v)))    ve = ve{loc=Just v}
-        f (MS Nothing)                   ve = ve
+        f (MS Nothing) ve = ve
         f (DT ("DTSTAMP", v))            ve = ve{datStamp=v}
         f (DT ("DTSTART", v))            ve = ve{datStart=v}
         f (DT ("DTEND", v))              ve = ve{datEnd=v}
